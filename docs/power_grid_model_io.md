@@ -32,6 +32,7 @@ SPDX-License-Identifier: MPL-2.0
 .. automodule:: power_grid_model_io.data_types
    :imported-members:
 .. autodata:: power_grid_model_io.data_types.StructuredData
+
 ```
 
 ## functions
