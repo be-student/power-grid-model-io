@@ -19,7 +19,6 @@ from power_grid_model_io.data_stores.base_data_store import (
 from power_grid_model_io.data_types import LazyDataFrame, TabularData
 from power_grid_model_io.utils.uuid_excel_cvtr import (
     UUID2IntCvtr,
-    add_guid_values_to_cvtr,
     get_special_key_map,
     special_nodes_en,
     special_nodes_nl,
@@ -238,19 +237,43 @@ class ExcelFileStore(BaseDataStore[TabularData]):
             sheet_name=sheet_name, nodes_en=special_nodes_en, nodes_nl=special_nodes_nl
         )
 
+        insertions: dict[int, tuple[str | tuple[str, ...], pd.Series]] = {}
         for guid_column in guid_columns:
             nr = VISION_EXCEL_LAN_DICT[self._language][DICT_KEY_NUMBER]
-            add_guid_values_to_cvtr(data, guid_column, self._uuid_cvtr)
+            guid_column_pos = first_level.tolist().index(guid_column)
+            guid_values = data.iloc[:, guid_column_pos]
+            self._uuid_cvtr.add_list(guid_values.tolist())
             new_column_name = guid_column.replace("GUID", nr)
             if guid_column == "GUID" and sheet_key_mapping not in (None, {}):
                 new_column_name = guid_column.replace("GUID", sheet_key_mapping[DICT_KEY_SUBNUMBER])
-            guid_column_pos = first_level.tolist().index(guid_column)
-            try:
-                data.insert(guid_column_pos + 1, new_column_name, data[guid_column].apply(self._uuid_cvtr.query))
-            except ValueError:
-                data[new_column_name] = data[guid_column].apply(self._uuid_cvtr.query)
 
-        return data
+            number_values = guid_values.apply(self._uuid_cvtr.query)
+            if new_column_name in first_level:
+                number_column_pos = first_level.tolist().index(new_column_name)
+                data.iloc[:, number_column_pos] = number_values
+                continue
+
+            column_name: str | tuple[str, ...] = new_column_name
+            if data.columns.nlevels > 1:
+                column_name = (new_column_name, *("" for _ in range(data.columns.nlevels - 1)))
+            insertions[guid_column_pos] = (column_name, number_values)
+
+        if not insertions:
+            return data
+
+        columns = []
+        for column_pos in range(len(data.columns)):
+            columns.append(data.iloc[:, [column_pos]])
+            if insertion := insertions.get(column_pos):
+                column_name, values = insertion
+                new_column = values.to_frame()
+                if isinstance(column_name, tuple):
+                    new_column.columns = pd.MultiIndex.from_tuples([column_name], names=data.columns.names)
+                else:
+                    new_column.columns = pd.Index([column_name], name=data.columns.name)
+                columns.append(new_column)
+
+        return pd.concat(columns, axis=1)
 
     def _update_column_names(self, data: pd.DataFrame) -> pd.DataFrame:
         update_column_names(data, self._terms_changed)

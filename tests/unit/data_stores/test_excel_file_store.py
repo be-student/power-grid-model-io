@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
@@ -300,6 +301,46 @@ def test_remove_unnamed_column_placeholders__empty():
 
     # Assert
     pd.testing.assert_frame_equal(result, data)
+
+
+def test_process_uuid_columns_batches_insertions_without_fragmentation_warning():
+    # A large Vision export previously emitted PerformanceWarning and reversed
+    # most generated columns because every insertion shifted later positions.
+    data = pd.DataFrame({f"Field{i}GUID": [f"guid-{i}"] for i in range(105)})
+    store = ExcelFileStore()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.PerformanceWarning)
+        result = store._process_uuid_columns(data=data, sheet_name="Sheet")
+
+    expected_columns = [name for i in range(105) for name in (f"Field{i}GUID", f"Field{i}Number")]
+    assert list(result.columns) == expected_columns
+    assert result.loc[0, "Field0Number"] == 0
+    assert result.loc[0, "Field104Number"] == 104
+
+
+def test_process_uuid_columns_updates_existing_number_column():
+    data = pd.DataFrame({"NodeGUID": ["guid-a", "guid-b"], "NodeNumber": [-1, -1], "Name": ["A", "B"]})
+    store = ExcelFileStore()
+
+    result = store._process_uuid_columns(data=data, sheet_name="Sheet")
+
+    expected = pd.DataFrame({"NodeGUID": ["guid-a", "guid-b"], "NodeNumber": [0, 1], "Name": ["A", "B"]})
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_process_uuid_columns_preserves_multi_index_columns():
+    columns = pd.MultiIndex.from_tuples([("NodeGUID", ""), ("Name", "text")], names=["field", "unit"])
+    data = pd.DataFrame([["guid-a", "A"]], columns=columns)
+    store = ExcelFileStore()
+
+    result = store._process_uuid_columns(data=data, sheet_name="Sheet")
+
+    expected_columns = pd.MultiIndex.from_tuples(
+        [("NodeGUID", ""), ("NodeNumber", ""), ("Name", "text")], names=["field", "unit"]
+    )
+    expected = pd.DataFrame([["guid-a", 0, "A"]], columns=expected_columns)
+    pd.testing.assert_frame_equal(result, expected)
 
 
 @patch("power_grid_model_io.data_stores.excel_file_store.ExcelFileStore._check_duplicate_values")
