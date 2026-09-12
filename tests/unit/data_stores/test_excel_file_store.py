@@ -319,8 +319,11 @@ def test_process_uuid_columns_batches_insertions_without_fragmentation_warning()
     assert result.loc[0, "Field104Number"] == 104
 
 
-def test_process_uuid_columns_updates_existing_number_column():
-    data = pd.DataFrame({"NodeGUID": ["guid-a", "guid-b"], "NodeNumber": [-1, -1], "Name": ["A", "B"]})
+@pytest.mark.parametrize("dtype", ["int64", "object"])
+def test_process_uuid_columns_updates_existing_number_column(dtype):
+    data = pd.DataFrame(
+        {"NodeGUID": ["guid-a", "guid-b"], "NodeNumber": pd.Series([-1, -1], dtype=dtype), "Name": ["A", "B"]}
+    )
     store = ExcelFileStore()
 
     result = store._process_uuid_columns(data=data, sheet_name="Sheet")

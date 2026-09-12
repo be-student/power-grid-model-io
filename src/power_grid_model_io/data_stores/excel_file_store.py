@@ -250,7 +250,7 @@ class ExcelFileStore(BaseDataStore[TabularData]):
             number_values = guid_values.apply(self._uuid_cvtr.query)
             if new_column_name in first_level:
                 number_column_pos = first_level.tolist().index(new_column_name)
-                data.iloc[:, number_column_pos] = number_values
+                data.isetitem(number_column_pos, number_values)
                 continue
 
             column_name: str | tuple[str, ...] = new_column_name
